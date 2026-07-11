@@ -79,17 +79,25 @@ jobs:
             echo "📹 录屏已关闭"
           fi
 
-          # 启动 Xvfb，camoufox headless=False 会渲染到这里，ffmpeg 也从这里录
-          Xvfb :99 -screen 0 1280x720x24 &
+          # 启动 Xvfb
+          Xvfb :99 -screen 0 1280x720x24 -ac &
           XVFB_PID=$!
-          sleep 3
+
+          # 等待 Xvfb 真正就绪（最多 15s）
+          # camoufox 启动时会探测 DISPLAY，:99 可连接才会复用，否则自己再起一个
           export DISPLAY=:99
-          echo "DISPLAY=$DISPLAY"
+          for i in $(seq 1 15); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then
+              echo "✅ Xvfb :99 就绪（${i}s）"
+              break
+            fi
+            sleep 1
+          done
 
           # 按需启动录屏
           RECORD_PID=""
           if [ "$DO_RECORD" = "true" ]; then
-            ffmpeg -f x11grab -display_size 1280x720 -framerate 15 -i :99.0 \
+            ffmpeg -f x11grab -s 1280x720 -framerate 15 -i :99.0 \
               -codec:v libx264 -preset ultrafast -crf 28 \
               -pix_fmt yuv420p -movflags +faststart /tmp/recording.mp4 \
               > /tmp/ffmpeg.log 2>&1 &
@@ -98,8 +106,8 @@ jobs:
             echo "录屏进程 PID: $RECORD_PID"
           fi
 
-          # 运行签到脚本（timeout 480s，CF验证+登录+签到+续费留足时间）
-          timeout 300 python sign_camoufox.py || echo "脚本退出码: $?"
+          # 运行签到脚本
+          timeout 480 python sign_camoufox.py || echo "脚本退出码: $?"
 
           echo "=== 截图目录内容 ==="
           ls -la ./screenshots/ || echo "截图目录不存在"
