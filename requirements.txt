@@ -1,0 +1,3 @@
+camoufox[geoip]>=0.4.4
+ddddocr
+Pillow
