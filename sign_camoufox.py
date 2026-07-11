@@ -1,4 +1,4 @@
-import os, re, logging, random, base64, json, time
+import os, re, logging, random, base64, json, time, math
 from pathlib import Path
 from datetime import datetime, timedelta
 import ddddocr
@@ -452,25 +452,77 @@ def sign(page):
     time.sleep(2)   # 让签到页在录屏里停留
     take_screenshot(page, "03_sign_page")
     time.sleep(1)
+
     if not (js_click_by_text(page, "button", "我要签到", "签到按钮") or
             js_click(page, "button.btn-primary", "签到主按钮") or
             js_click(page, "button[type='submit']", "签到submit")):
         log.warning("找不到签到按钮")
         return None
 
-    time.sleep(3)   # 等弹窗弹出并在录屏里可见
+    time.sleep(2)
     take_screenshot(page, "03b_after_sign")
-    time.sleep(1)
 
-    # 弹窗确认
-    click_layui_ok(page, "签到确认弹窗")
-    time.sleep(3)   # 让确认结果在录屏里停留
+    # 数学验证题（点击签到后可能弹出）
+    body = get_text(page)
+    match = re.search(r'请计算[：:]\s*(\d+)\s*([+\-*/·×÷])\s*(\d+)', body)
+    if match:
+        a, op, b = int(match[1]), match[2], int(match[3])
+        if   op in ('+',):          result = a + b
+        elif op in ('-',):          result = a - b
+        elif op in ('*', '·', '×'): result = a * b
+        elif op in ('/', '÷'):      result = a / b if b != 0 else 0
+        else:                       result = 0
+        result_str = (str(int(result)) if result == int(result)
+                      else f"{math.floor(result * 100 + 0.5) / 100:.2f}".rstrip("0").rstrip("."))
+        log.info(f"数学题: {a} {op} {b} = {result_str}")
+        take_screenshot(page, "03b2_math_question")
+
+        ans_el = page.locator('input[placeholder="请输入答案"]').first
+        ans_el.click()
+        ans_el.type(result_str, delay=80)
+        time.sleep(0.5)
+        take_screenshot(page, "03b3_math_filled")
+
+        page.get_by_role("button", name="验证答案").click()
+        log.info("已点击验证答案，等待弹窗...")
+        time.sleep(2)
+        take_screenshot(page, "03b4_math_submitted")
+
+        # 等待验证成功弹窗
+        for _ in range(12):
+            body = get_text(page)
+            if "验证成功" in body or "继续签到" in body:
+                log.info("检测到验证成功弹窗，点击确定...")
+                click_layui_ok(page, "验证弹窗确定")
+                time.sleep(1.5)
+                break
+            time.sleep(0.5)
+    else:
+        log.info("未检测到数学题，直接等待签到弹窗")
+
+    time.sleep(2)
+
+    # 等待签到成功弹窗
+    for _ in range(12):
+        body = get_text(page)
+        if "签到成功" in body:
+            log.info("检测到签到成功弹窗，点击确定...")
+            click_layui_ok(page, "签到成功确定")
+            time.sleep(1.5)
+            break
+        time.sleep(0.5)
+
+    time.sleep(2)
     take_screenshot(page, "03c_after_confirm")
 
+    # 刷新页面读最新积分
+    page.goto(SIGN_PAGE, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(2)
     body = get_text(page)
     bal = re.search(r'账户余额剩余\s*([\d.]+)\s*积分', body)
     balance = bal.group(1) if bal else None
     log.info(f"签到完成，积分: {balance}")
+    take_screenshot(page, "03d_sign_final")
     return balance
 
 # ---------- 续费 ----------
