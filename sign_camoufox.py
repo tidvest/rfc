@@ -415,6 +415,7 @@ def login(page, max_retries=2) -> bool:
         log.info("已点击登录，检查跳转...")
         if wait_for_url_contains(page, "/clientarea", 10):
             log.info("✅ 登录成功")
+            time.sleep(2)   # 让登录成功页在录屏里停留
             take_screenshot(page, "02_login_success")
             return True
 
@@ -448,19 +449,22 @@ def sign(page):
         take_screenshot(page, "02_sign_page_unknown")
         return None
 
+    time.sleep(2)   # 让签到页在录屏里停留
     take_screenshot(page, "03_sign_page")
+    time.sleep(1)
     if not (js_click_by_text(page, "button", "我要签到", "签到按钮") or
             js_click(page, "button.btn-primary", "签到主按钮") or
             js_click(page, "button[type='submit']", "签到submit")):
         log.warning("找不到签到按钮")
         return None
 
-    time.sleep(2)
+    time.sleep(3)   # 等弹窗弹出并在录屏里可见
     take_screenshot(page, "03b_after_sign")
+    time.sleep(1)
 
     # 弹窗确认
     click_layui_ok(page, "签到确认弹窗")
-    time.sleep(2)
+    time.sleep(3)   # 让确认结果在录屏里停留
     take_screenshot(page, "03c_after_confirm")
 
     body = get_text(page)
@@ -476,7 +480,7 @@ def renew(page):
         log.warning("服务页 CF 验证失败")
         return False, None, None
 
-    time.sleep(3)
+    time.sleep(5)   # 服务页表格异步加载，多等一会
     take_screenshot(page, "04_service_page")
 
     expiry_str = read_expiry_from_service_page(page)
@@ -488,7 +492,7 @@ def renew(page):
         expiry_str = m.group(1) if m else None
 
     if not expiry_str:
-        log.info("未找到到期日")
+        log.info("服务列表为空或未找到到期日，跳过续费")
         return False, None, None
 
     expiry = datetime.strptime(expiry_str, "%Y-%m-%d")
