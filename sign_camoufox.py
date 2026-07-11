@@ -547,14 +547,17 @@ def main():
 
     log.info("启动 Camoufox（反检测 Firefox）...")
     with Camoufox(
-        headless="virtual",       # Linux 下用 Xvfb 虚拟显示器运行（比 headless=True 更难被检测）
-        humanize=True,            # 启用人类鼠标轨迹
-        geoip=True,               # 根据代理 IP 自动匹配时区/地区/语言，消除指纹矛盾
-        disable_coop=True,        # 允许跨域 iframe 交互（Turnstile checkbox 必须）
+        headless="virtual",           # Linux 下用 Xvfb 虚拟显示器运行（比 headless=True 更难被检测）
+        humanize=True,                # 启用人类鼠标轨迹
+        geoip=True,                   # 根据代理 IP 自动匹配时区/地区/语言，消除指纹矛盾
+        disable_coop=True,            # 允许跨域 iframe 交互（Turnstile checkbox 必须）
+        i_know_what_im_doing=True,    # 消除 disable_coop LeakWarning
         proxy=PROXY_SERVER,
-        os=["windows", "macos"],  # 优先伪装成 Windows/Mac（Linux 用户比例低，容易被标记）
+        os=["windows", "macos"],      # 优先伪装成 Windows/Mac（Linux 用户比例低，容易被标记）
     ) as browser:
-        page = browser.new_page()
+        # no_viewport=True 跳过 setDefaultViewport，避免旧版 camoufox 的
+        # "isMobile not described in scheme" 协议报错，camoufox 自己管理窗口尺寸
+        page = browser.new_page(no_viewport=True)
 
         try:
             if not login(page):
