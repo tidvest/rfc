@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            xvfb ffmpeg curl unzip \
+            xvfb x11-utils ffmpeg curl unzip \
             fonts-noto-cjk \
             libgtk-3-0 libx11-xcb1 \
             libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
@@ -67,7 +67,6 @@ jobs:
           PASSWORD: ${{ secrets.PASSWORD }}
           WXPUSHER_TOKEN: ${{ secrets.WXPUSHER_TOKEN }}
           WXPUSHER_UID: ${{ secrets.WXPUSHER_UID }}
-          DISPLAY: ":99"
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: "llvmpipe"
           ENABLE_RECORDING: ${{ github.event.inputs.enable_recording }}
@@ -77,32 +76,35 @@ jobs:
             echo "📹 录屏已开启"
           else
             DO_RECORD=false
-            echo "📹 录屏已关闭（定时任务默认不录屏）"
+            echo "📹 录屏已关闭"
           fi
 
-          # Camoufox 使用 headless="virtual" 会自己管理 Xvfb，
-          # 但 workflow 里显式启动一个确保 DISPLAY 变量可用
-          Xvfb :99 -screen 0 1280x720x24 +extension RANDR &
+          # 启动 Xvfb，camoufox headless=False 会渲染到这里，ffmpeg 也从这里录
+          Xvfb :99 -screen 0 1280x720x24 &
           XVFB_PID=$!
-          sleep 2
-          DISPLAY=:99 xdpyinfo > /dev/null 2>&1 && echo "Xvfb 就绪" || echo "Xvfb 启动异常"
+          sleep 3
+          export DISPLAY=:99
+          echo "DISPLAY=$DISPLAY"
 
+          # 按需启动录屏
           RECORD_PID=""
           if [ "$DO_RECORD" = "true" ]; then
-            ffmpeg -f x11grab -video_size 1280x720 -framerate 15 -i :99 \
+            ffmpeg -f x11grab -display_size 1280x720 -framerate 15 -i :99.0 \
               -codec:v libx264 -preset ultrafast -crf 28 \
               -pix_fmt yuv420p -movflags +faststart /tmp/recording.mp4 \
               > /tmp/ffmpeg.log 2>&1 &
             RECORD_PID=$!
-            sleep 3
+            sleep 2
             echo "录屏进程 PID: $RECORD_PID"
           fi
 
-          timeout 270 python sign_camoufox.py || echo "脚本退出码: $?"
+          # 运行签到脚本（timeout 480s，CF验证+登录+签到+续费留足时间）
+          timeout 300 python sign_camoufox.py || echo "脚本退出码: $?"
 
           echo "=== 截图目录内容 ==="
           ls -la ./screenshots/ || echo "截图目录不存在"
 
+          # 停止录屏
           if [ -n "$RECORD_PID" ]; then
             sleep 2
             kill $RECORD_PID 2>/dev/null || true
@@ -140,28 +142,20 @@ jobs:
         run: |
           REPO="${{ github.repository }}"
           WORKFLOW_NAME="v2ray-sign.yml"
-
-          echo "获取 workflow ID..."
           WORKFLOW_ID=$(gh api \
             "repos/${REPO}/actions/workflows" \
             --jq ".workflows[] | select(.path | endswith(\"${WORKFLOW_NAME}\")) | .id")
-
           if [ -z "$WORKFLOW_ID" ]; then
             echo "未找到 workflow，跳过清理"
             exit 0
           fi
-          echo "Workflow ID: $WORKFLOW_ID"
-
-          echo "获取全部 runs..."
           RUN_IDS=$(gh api \
             "repos/${REPO}/actions/workflows/${WORKFLOW_ID}/runs?per_page=100" \
             --jq '.workflow_runs | sort_by(.run_number) | reverse | .[2:] | .[].id')
-
           if [ -z "$RUN_IDS" ]; then
             echo "没有需要清理的旧 runs"
             exit 0
           fi
-
           for RUN_ID in $RUN_IDS; do
             echo "删除 run: $RUN_ID"
             gh api -X DELETE "repos/${REPO}/actions/runs/${RUN_ID}" || echo "删除 $RUN_ID 失败，跳过"
